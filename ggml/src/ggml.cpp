@@ -18,7 +18,7 @@ static bool ggml_uncaught_exception_init = []{
     if (GGML_NO_BACKTRACE) {
         return false;
     }
-    const auto prev{std::get_terminate()};
+    const auto prev = std::get_terminate();
     GGML_ASSERT(prev != ggml_uncaught_exception);
     previous_terminate_handler = prev;
     std::set_terminate(ggml_uncaught_exception);

@@ -11,9 +11,8 @@
 #    include <dlfcn.h>
 #    include <unistd.h>
 #endif
-#include <filesystem>
-
-namespace fs = std::filesystem;
+#include <string>
+#include <memory>
 
 #ifdef _WIN32
 
@@ -39,7 +38,7 @@ struct dl_handle_deleter {
 
 using dl_handle_ptr = std::unique_ptr<dl_handle, dl_handle_deleter>;
 
-dl_handle * dl_load_library(const fs::path & path);
+dl_handle * dl_load_library(const std::string & path);
 void * dl_get_sym(dl_handle * handle, const char * name);
 const char * dl_error();
 

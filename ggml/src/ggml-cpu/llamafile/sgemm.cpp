@@ -449,14 +449,14 @@ template <> inline vfloat32m8_t set_zero() {
 
 #if defined(__riscv_v_intrinsic)
 template <typename T> size_t vlmax() {
-    if constexpr (std::is_same_v<T, vfloat16mf2_t>) { return  __riscv_vsetvlmax_e16mf2(); }
-    else if constexpr (std::is_same_v<T, vfloat16m1_t>) { return  __riscv_vsetvlmax_e16m1(); }
-    else if constexpr (std::is_same_v<T, vfloat16m2_t>) { return  __riscv_vsetvlmax_e16m2(); }
-    else if constexpr (std::is_same_v<T, vfloat16m4_t>) { return  __riscv_vsetvlmax_e16m4(); }
-    else if constexpr (std::is_same_v<T, vfloat32m1_t>) { return  __riscv_vsetvlmax_e32m1(); }
-    else if constexpr (std::is_same_v<T, vfloat32m2_t>) { return  __riscv_vsetvlmax_e32m2(); }
-    else if constexpr (std::is_same_v<T, vfloat32m4_t>) { return  __riscv_vsetvlmax_e32m4(); }
-    else if constexpr (std::is_same_v<T, vfloat32m8_t>) { return  __riscv_vsetvlmax_e32m8(); }
+    if (std::is_same<T, vfloat16mf2_t>::value) { return  __riscv_vsetvlmax_e16mf2(); }
+    else if (std::is_same<T, vfloat16m1_t>::value) { return  __riscv_vsetvlmax_e16m1(); }
+    else if (std::is_same<T, vfloat16m2_t>::value) { return  __riscv_vsetvlmax_e16m2(); }
+    else if (std::is_same<T, vfloat16m4_t>::value) { return  __riscv_vsetvlmax_e16m4(); }
+    else if (std::is_same<T, vfloat32m1_t>::value) { return  __riscv_vsetvlmax_e32m1(); }
+    else if (std::is_same<T, vfloat32m2_t>::value) { return  __riscv_vsetvlmax_e32m2(); }
+    else if (std::is_same<T, vfloat32m4_t>::value) { return  __riscv_vsetvlmax_e32m4(); }
+    else if (std::is_same<T, vfloat32m8_t>::value) { return  __riscv_vsetvlmax_e32m8(); }
     return 0;
 }
 #endif
@@ -526,24 +526,40 @@ class tinyBLAS {
 
   private:
     template <int RM, int RN, int BM>
+    inline typename std::enable_if<(RN > 1)>::type
+    mnpack_recurse(int64_t m, int64_t n, int64_t SIZE_N, int64_t BN) {
+        return mnpack<RM, RN-1, BM>(m, n, SIZE_N, BN);
+    }
+    template <int RM, int RN, int BM>
+    inline typename std::enable_if<(RN <= 1)>::type
+    mnpack_recurse(int64_t m, int64_t n, int64_t SIZE_N, int64_t BN) {
+        GGML_LOG_ERROR("mnpack<%d, %d> bloc size not supported\n", RM, (int)SIZE_N);
+        GGML_ASSERT(false);
+    }
+
+    template <int RM, int RN, int BM>
     inline void mnpack(int64_t m, int64_t n, int64_t SIZE_N, int64_t BN) {
         if (SIZE_N == RN) {
             return gemm<RM, RN, BM>(m, n, BN);
         }
-        if constexpr (RN > 1) {
-            return mnpack<RM, RN-1, BM>(m, n, SIZE_N, BN);
-        } else {
-            GGML_LOG_ERROR("mnpack<%d, %d> bloc size not supported\n", RM, (int)SIZE_N);
-            GGML_ASSERT(false); // we have miss something.
-        }
+        return mnpack_recurse<RM, RN, BM>(m, n, SIZE_N, BN);
     }
+
+    template <int RM, int RN>
+    inline typename std::enable_if<(RN > 1)>::type
+    gemm_bloc_prev(int64_t ii, int64_t jj) {
+        gemm_bloc<RM, RN-1>(ii, jj);
+    }
+    template <int RM, int RN>
+    inline typename std::enable_if<(RN <= 1)>::type
+    gemm_bloc_prev(int64_t, int64_t) {}
 
     template <int RM, int RN>
     inline void gemm_bloc(int64_t ii, int64_t jj) {
         D Cv[RN][RM] = {};
         for (int64_t l = 0; l < k; l += KN) {
             // help compiler for op order.
-            if constexpr (RM <= RN) {
+            if (RM <= RN) {
                 V Av[RM];
                 for (int64_t i = 0; i < RM; ++i) {
                     Av[i] = load<V>(A + lda * (ii + i) + l);
@@ -609,9 +625,9 @@ class tinyBLAS {
                 for (; jj < jj1; jj += RN) {
                     gemm_bloc<RM, RN>(ii + bi, jj);
                 }
-                if constexpr (RN > 1) {
+                if (RN > 1) {
                     for (; jj < jj2; jj += RN - 1) {
-                        gemm_bloc<RM, RN-1>(ii + bi, jj);
+                        gemm_bloc_prev<RM, RN>(ii + bi, jj);
                     }
                 }
                 GGML_ASSERT(jj == jj2);
@@ -703,17 +719,24 @@ class tinyBLAS_RVV {
     }
 
   private:
+    template <int RM, int RN, int BM>
+    inline typename std::enable_if<(RN > 1)>::type
+    mnpack_recurse(int64_t m, int64_t n, int64_t SIZE_N, int64_t BN) {
+        return mnpack<RM, RN-1, BM>(m, n, SIZE_N, BN);
+    }
+    template <int RM, int RN, int BM>
+    inline typename std::enable_if<(RN <= 1)>::type
+    mnpack_recurse(int64_t m, int64_t n, int64_t SIZE_N, int64_t BN) {
+        GGML_LOG_ERROR("mnpack<%d, %d> bloc size not supported\n", RM, (int)SIZE_N);
+        GGML_ASSERT(false);
+    }
+
     template<int RM, int RN, int BM>
     inline void mnpack(int64_t m, int64_t n, int64_t SIZE_N, int64_t BN) {
         if (SIZE_N == RN) {
             return gemm<RM, RN, BM>(m, n, BN);
         }
-        if constexpr (RN > 1) {
-            return mnpack<RM, RN-1, BM>(m, n, SIZE_N, BN);
-        } else {
-            GGML_LOG_ERROR("mnpack<%d, %d> bloc size not supported\n", RM, (int)SIZE_N);
-            GGML_ASSERT(false); // we have miss something.
-        }
+        return mnpack_recurse<RM, RN, BM>(m, n, SIZE_N, BN);
     }
 
     inline void gemm_bloc_4x6(int64_t ii, int64_t jj) {
@@ -1125,16 +1148,16 @@ class tinyBLAS_RVV {
 
     template <int RM, int RN>
     inline void gemm_bloc(int64_t ii, int64_t jj) {
-        if constexpr (RM == 4) {
-            if constexpr (RN == 6) { return gemm_bloc_4x6(ii, jj); }
-            if constexpr (RN == 5) { return gemm_bloc_4x5(ii, jj); }
-            if constexpr (RN == 4) { return gemm_bloc_4x4(ii, jj); }
-            if constexpr (RN == 3) { return gemm_bloc_4x3(ii, jj); }
-            if constexpr (RN == 2) { return gemm_bloc_4x2(ii, jj); }
-            if constexpr (RN == 1) { return gemm_bloc_4x1(ii, jj); }
-        } else if constexpr (RM == 2) {
-            if constexpr (RN == 2) { return gemm_bloc_2x2(ii, jj); }
-            if constexpr (RN == 1) { return gemm_bloc_2x1(ii, jj); }
+        if (RM == 4) {
+            if (RN == 6) { return gemm_bloc_4x6(ii, jj); }
+            if (RN == 5) { return gemm_bloc_4x5(ii, jj); }
+            if (RN == 4) { return gemm_bloc_4x4(ii, jj); }
+            if (RN == 3) { return gemm_bloc_4x3(ii, jj); }
+            if (RN == 2) { return gemm_bloc_4x2(ii, jj); }
+            if (RN == 1) { return gemm_bloc_4x1(ii, jj); }
+        } else if (RM == 2) {
+            if (RN == 2) { return gemm_bloc_2x2(ii, jj); }
+            if (RN == 1) { return gemm_bloc_2x1(ii, jj); }
         }
     }
 
@@ -1175,9 +1198,9 @@ class tinyBLAS_RVV {
                 for (; jj < jj1; jj += RN) {
                     gemm_bloc<RM, RN>(ii + bi, jj);
                 }
-                if constexpr (RN > 1) {
+                if (RN > 1) {
                     for (; jj < jj2; jj += RN - 1) {
-                        gemm_bloc<RM, RN-1>(ii + bi, jj);
+                        gemm_bloc_prev<RM, RN>(ii + bi, jj);
                     }
                 }
                 GGML_ASSERT(jj == jj2);
@@ -2263,11 +2286,11 @@ class tinyBLAS_HP16_PPC {
 
     template<int RM, int RN>
     inline void kernel(int64_t ii, int64_t jj) {
-       if constexpr(RM == 4 && RN == 8) {
+       if(RM == 4 && RN == 8) {
           KERNEL_4x8(ii,jj);
-       } else if constexpr(RM == 8 && RN == 8) {
+       } else if(RM == 8 && RN == 8) {
           KERNEL_8x8(ii,jj);
-       } else if constexpr(RM == 8 && RN == 4) {
+       } else if(RM == 8 && RN == 4) {
           KERNEL_8x4(ii,jj);
        } else {
           assert(false && "RN/RM values not supported");
@@ -2540,7 +2563,7 @@ class tinyBLAS_Q0_PPC {
                     convert_and_scale_q8(c[1], v_scale, hp_res[r][2], hp_res[r][3]);
                 }
                 for (int col = 0; col < 4; col++) {
-                    if constexpr (chunk_size == 8) {
+                    if (chunk_size == 8) {
                         vec_t t[8];
                         t[0] = vec_perm((vec_t)hp_res[0][col], (vec_t)hp_res[1][col], swiz1);
                         t[1] = vec_perm((vec_t)hp_res[0][col], (vec_t)hp_res[1][col], swiz2);
@@ -2846,11 +2869,11 @@ class tinyBLAS_Q0_PPC {
         std::array<int, 4> comparray {};
         vector float fin_res[8] = {0};
         vector float vs[8] = {0};
-        bool isAblock_q4 = std::is_same_v<TA, block_q4_0>;
+        bool isAblock_q4 = std::is_same<TA, block_q4_0>::value;
         for (int l = 0; l < k; l++) {
             __builtin_mma_xxsetaccz(& acc_0);
             __builtin_mma_xxsetaccz(& acc_1);
-            if (std::is_same_v<TA, block_q4_0>) {
+            if (std::is_same<TA, block_q4_0>::value) {
                packNormalInt4<4>((A + (ii * lda) + l), lda, 4, 4, (int8_t *)vec_A, comparray);
             } else {
                packNormal<int8_t, vector signed char>((const block_q8_0 *)(A + (ii * lda) + l), lda, 4, 8, (int8_t *)vec_A, false);
@@ -2891,11 +2914,11 @@ class tinyBLAS_Q0_PPC {
         std::array<int, 8> comparray {};
         vector float fin_res[8] = {0};
         vector float vs[8] = {0};
-        bool isAblock_q4 = std::is_same_v<TA, block_q4_0>;
+        bool isAblock_q4 = std::is_same<TA, block_q4_0>::value;
         for (int l = 0; l < k; l++) {
             __builtin_mma_xxsetaccz(& acc_0);
             __builtin_mma_xxsetaccz(& acc_1);
-            if (std::is_same_v<TA, block_q4_0>) {
+            if (std::is_same<TA, block_q4_0>::value) {
                packNormalInt4<8>((A + (ii * lda) + l), lda, 8, 4, (int8_t *)vec_A, comparray);
             } else {
                packNormal<int8_t, vector signed char>((const block_q8_0 *)(A + (ii * lda) + l), lda, 8, 8, (int8_t *)vec_A, false);
@@ -2936,13 +2959,13 @@ class tinyBLAS_Q0_PPC {
         std::array<int, 8> comparray {};
         vector float fin_res[16] = {0};
         vector float vs[16] = {0};
-        bool isAblock_q4 = std::is_same_v<TA, block_q4_0>;
+        bool isAblock_q4 = std::is_same<TA, block_q4_0>::value;
         for (int l = 0; l < k; l++) {
             __builtin_mma_xxsetaccz(& acc_0);
             __builtin_mma_xxsetaccz(& acc_1);
             __builtin_mma_xxsetaccz(& acc_2);
             __builtin_mma_xxsetaccz(& acc_3);
-            if (std::is_same_v<TA, block_q4_0>) {
+            if (std::is_same<TA, block_q4_0>::value) {
                packNormalInt4<8>((A + (ii * lda) + l), lda, 8, 4, (int8_t *)vec_A, comparray);
             } else {
                packNormal<int8_t, vector signed char>((const block_q8_0 *)(A + (ii * lda) + l), lda, 8, 8, (int8_t *)vec_A, false);
@@ -3039,7 +3062,7 @@ class tinyBLAS_Q0_PPC {
     void matmul_tiled(int64_t m, int64_t n, int64_t mc, int64_t nc, int64_t kc) {
         vec_t A_pack[mc * kc * 4];
         vec_t B_pack[nc * kc * 4];
-        constexpr bool is_Ablock_q4 = std::is_same_v<TA, block_q4_0>;
+        constexpr bool is_Ablock_q4 = std::is_same<TA, block_q4_0>::value;
         int64_t ytiles = m / mc;
         int64_t xtiles = n / nc;
         int64_t tiles  = xtiles * ytiles;
@@ -3053,7 +3076,7 @@ class tinyBLAS_Q0_PPC {
             int64_t ii = (job / xtiles) * mc;
             int64_t jj = (job % xtiles) * nc;
             for (int64_t kk = 0; kk < k; kk += kc) {
-                if constexpr(is_Ablock_q4) {
+                if(is_Ablock_q4) {
                     packNormal_q4_fp16(A + ii * lda + kk, lda, mc, kc, (uint8_t *)A_pack);
                 } else {
                     packNormal_q8_fp16(A + ii * lda + kk, lda, mc, kc, (uint8_t *)A_pack);
@@ -3074,7 +3097,7 @@ class tinyBLAS_Q0_PPC {
         vec_t vec_A[8] = {0}, vec_B[8] = {0};
         vector signed int vec_C[4];
         acc_t acc_0;
-        bool isAblock_q4 = std::is_same_v<TA, block_q4_0>;
+        bool isAblock_q4 = std::is_same<TA, block_q4_0>::value;
 
         if (end > tiles)
             end = tiles;
@@ -3134,11 +3157,11 @@ class tinyBLAS_Q0_PPC {
 
     template<int RM, int RN>
     inline void kernel(int64_t ii, int64_t jj) {
-        if constexpr(RM == 4 && RN == 8) {
+        if(RM == 4 && RN == 8) {
             KERNEL_4x8(ii,jj);
-        } else if constexpr(RM == 8 && RN == 4) {
+        } else if(RM == 8 && RN == 4) {
             KERNEL_8x4(ii,jj);
-        } else if constexpr(RM == 8 && RN == 8) {
+        } else if(RM == 8 && RN == 8) {
             KERNEL_8x8(ii,jj);
         } else {
             assert(false && "RN/RM values not supported");
@@ -3600,13 +3623,13 @@ class tinyBLAS_PPC {
 
     template<int RM, int RN>
     inline void kernel(int64_t ii, int64_t jj) {
-        if constexpr(RM == 4 && RN == 4) {
+        if(RM == 4 && RN == 4) {
             KERNEL_4x4(ii, jj);
-        } else if constexpr(RM == 4 && RN == 8) {
+        } else if(RM == 4 && RN == 8) {
             KERNEL_4x8(ii, jj);
-        } else if constexpr(RM == 8 && RN == 4) {
+        } else if(RM == 8 && RN == 4) {
             KERNEL_8x4(ii, jj);
-        } else if constexpr(RM == 8 && RN == 8) {
+        } else if(RM == 8 && RN == 8) {
             KERNEL_8x8(ii, jj);
         } else {
             static_assert(false, "RN/RM values not supported");

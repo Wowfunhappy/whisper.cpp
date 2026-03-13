@@ -10,15 +10,10 @@
 
 ggml_backend_buffer_type_t ggml_backend_cpu_repack_buffer_type(void);
 
-template <int K> constexpr int QK_0() {
-    if constexpr (K == 4) {
-        return QK4_0;
-    }
-    if constexpr (K == 8) {
-        return QK8_0;
-    }
-    return -1;
-}
+template <int K> struct QK_0_val { static const int value = -1; };
+template <> struct QK_0_val<4> { static const int value = QK4_0; };
+template <> struct QK_0_val<8> { static const int value = QK8_0; };
+template <int K> constexpr int QK_0() { return QK_0_val<K>::value; }
 
 template <int K, int N> struct block {
     ggml_half d[N];                         // deltas for N qK_0 blocks

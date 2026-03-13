@@ -31,8 +31,8 @@ const char * dl_error() {
 
 #else
 
-dl_handle * dl_load_library(const fs::path & path) {
-    dl_handle * handle = dlopen(path.string().c_str(), RTLD_NOW | RTLD_LOCAL);
+dl_handle * dl_load_library(const std::string & path) {
+    dl_handle * handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     return handle;
 }
 

@@ -1,5 +1,7 @@
 #include "binary-ops.h"
 
+#include <type_traits>
+
 #if defined(GGML_USE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
 
@@ -58,7 +60,9 @@ static void apply_binary_op(const ggml_compute_params * params, ggml_tensor * ds
     GGML_ASSERT( nb0 == sizeof(dst_t));
     GGML_ASSERT(nb00 == sizeof(src0_t));
 
-    const auto [ir0, ir1] = get_thread_range(params, src0);
+    const auto _range = get_thread_range(params, src0);
+    const auto ir0 = _range.first;
+    const auto ir1 = _range.second;
     const bool is_src1_contiguous_rows = ggml_is_contiguous_rows(src1);
 
 #ifdef GGML_USE_ACCELERATE
@@ -96,9 +100,9 @@ static void apply_binary_op(const ggml_compute_params * params, ggml_tensor * ds
 
             for (int64_t r = 0; r < nr0; ++r) {
 #ifdef GGML_USE_ACCELERATE
-                if constexpr (std::is_same_v<src0_t, float> && std::is_same_v<src1_t, float> && std::is_same_v<dst_t, float>) {
+                if (std::is_same<src0_t, float>::value && std::is_same<src1_t, float>::value && std::is_same<dst_t, float>::value) {
                     if (vDSP_op != nullptr) {
-                        vDSP_op(src1_ptr, 1, src0_ptr + r*ne10, 1, dst_ptr + r*ne10, 1, ne10);
+                        vDSP_op(reinterpret_cast<const float *>(src1_ptr), 1, reinterpret_cast<const float *>(src0_ptr + r*ne10), 1, reinterpret_cast<float *>(dst_ptr + r*ne10), 1, ne10);
                         continue;
                     }
                 }

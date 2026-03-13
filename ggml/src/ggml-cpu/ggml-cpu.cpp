@@ -368,9 +368,19 @@ static void ggml_backend_cpu_device_get_memory(ggml_backend_dev_t dev, size_t * 
     *total = status.ullTotalPhys;
     *free = status.ullAvailPhys;
 #else
+#if defined(__APPLE__)
+    #include <sys/sysctl.h>
+    {
+        int64_t memsize = 0;
+        size_t len = sizeof(memsize);
+        sysctlbyname("hw.memsize", &memsize, &len, NULL, 0);
+        *total = (size_t)memsize;
+    }
+#else
     long pages = sysconf(_SC_PHYS_PAGES);
     long page_size = sysconf(_SC_PAGE_SIZE);
     *total = pages * page_size;
+#endif
 
     // "free" system memory is ill-defined, for practical purposes assume that all of it is free:
     *free = *total;

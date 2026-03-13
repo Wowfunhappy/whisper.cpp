@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <type_traits>
 
 // ggml_compute_forward_dup
 
@@ -88,7 +89,7 @@ static void ggml_compute_forward_dup_flt(
     // case: dst tensor is contiguous
     if (ggml_is_contiguous(dst)) {
         if (nb00 == sizeof(src_t)) {
-            if constexpr (std::is_same_v<dst_t, src_t>) {
+            if (std::is_same<dst_t, src_t>::value) {
                 // same type
                 size_t id = 0;
                 const size_t rs = ne00 * nb00;
@@ -156,7 +157,7 @@ static void ggml_compute_forward_dup_flt(
     int64_t i12 = 0;
     int64_t i13 = 0;
 
-    if constexpr (std::is_same_v<dst_t, src_t>) {
+    if (std::is_same<dst_t, src_t>::value) {
         for (int64_t i03 = 0; i03 < ne03; i03++) {
             for (int64_t i02 = 0; i02 < ne02; i02++) {
                 i10 += ne00 * ir0;
@@ -1414,7 +1415,9 @@ static void ggml_compute_forward_cumsum_f32(
     GGML_ASSERT(ne2 == ne02);
     GGML_ASSERT(ne3 == ne03);
 
-    const auto [ir0, ir1] = get_thread_range(params, src0);
+    const auto _range = get_thread_range(params, src0);
+    const auto ir0 = _range.first;
+    const auto ir1 = _range.second;
 
     for (int64_t ir = ir0; ir < ir1; ++ir) {
         const int64_t i03 = ir/(ne02*ne01);
@@ -2216,7 +2219,9 @@ static void ggml_compute_forward_fill_f32(const ggml_compute_params * params, gg
     GGML_TENSOR_LOCALS(int64_t, ne, dst, ne);
     GGML_TENSOR_LOCALS(size_t,  nb, dst, nb);
 
-    const auto [ir0, ir1] = get_thread_range(params, dst);
+    const auto _range = get_thread_range(params, dst);
+    const auto ir0 = _range.first;
+    const auto ir1 = _range.second;
 
     for (int64_t ir = ir0; ir < ir1; ++ir) {
         const int64_t i03 = ir/(ne2*ne1);
@@ -2244,7 +2249,9 @@ static void ggml_compute_forward_tri_f32(const ggml_compute_params * params, ggm
 
     GGML_TENSOR_UNARY_OP_LOCALS
 
-    const auto [ir0, ir1] = get_thread_range(params, src0);
+    const auto _range = get_thread_range(params, src0);
+    const auto ir0 = _range.first;
+    const auto ir1 = _range.second;
 
     bool (*bipred)(int, int);
 
@@ -3318,7 +3325,7 @@ static void ggml_compute_forward_swiglu_oai_f32(
 
         for (int k = 0; k < nc; k++) {
             const float x = std::min(src0_p[k], limit);
-            const float y = std::clamp(src1_p[k], -limit, limit);
+            const float y = std::max(-limit, std::min(src1_p[k], limit));
             const float out_glu = x / (1.f + expf(alpha * (-x)));
             dst_p[k] = out_glu * (y + 1.f);
         }
@@ -7718,7 +7725,7 @@ static void ggml_compute_forward_pad_f32(
             for (int64_t i0 = 0; i0 < ne0; ++i0) {
                 for (int64_t i3 = 0; i3 < ne3; ++i3) {
                     // circular means wrap around on a torus, so x and y loop around
-                    if constexpr (circular_t) {
+                    if (circular_t) {
                         const int64_t dst_idx = i3*(ne0*ne1*ne2) + i2*(ne0*ne1) + i1*ne0 + i0;
                         const int64_t src_i0 = ggml_wrap_around(i0 - lp0, ne00);
                         const int64_t src_i1 = ggml_wrap_around(i1 - lp1, ne01);
@@ -7973,7 +7980,7 @@ template<enum ggml_sort_order order>
 struct cmp_argsort {
     const float * data;
     bool operator()(int32_t a, int32_t b) const {
-        if constexpr (order == GGML_SORT_ORDER_ASC) {
+        if (order == GGML_SORT_ORDER_ASC) {
             return data[a] < data[b];
         } else {
             return data[a] > data[b];

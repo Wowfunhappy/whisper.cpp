@@ -13,6 +13,7 @@
 #include <cstring>
 #include <cassert>
 #include <cstdlib> // for qsort
+#include <type_traits>
 #include <cstdio>  // for GGML_ASSERT
 
 #define GGML_CPU_CLANG_WORKAROUND
@@ -23,6 +24,19 @@
 #endif
 
 #define UNUSED GGML_UNUSED
+
+// Polyfill for _mm256_set_m128 (not available in Apple Clang 6.0)
+#if defined(__AVX__) && !defined(_mm256_set_m128)
+static inline __m256 ggml_mm256_set_m128(__m128 hi, __m128 lo) {
+    return _mm256_insertf128_ps(_mm256_castps128_ps256(lo), hi, 1);
+}
+#define _mm256_set_m128(hi, lo) ggml_mm256_set_m128((hi), (lo))
+#endif
+
+// _mm256_bsrli_epi128 is an alias for _mm256_srli_si256
+#ifndef _mm256_bsrli_epi128
+#define _mm256_bsrli_epi128(a, imm8) _mm256_srli_si256((a), (imm8))
+#endif
 
 #if defined(__AVX__)
 #if defined(__F16C__)
@@ -64,16 +78,8 @@ static inline __m512 __avx512_repeat_f32cx16_load(__m128i x) {
     return _mm512_loadu_ps(tmp);
 }
 #endif
-static inline __m256 __avx_f32cx8_load(ggml_fp16_t *x) {
-    float tmp[8];
-
-    for (int i = 0; i < 8; i++) {
-        tmp[i] = GGML_CPU_FP16_TO_FP32(x[i]);
-    }
-
-    return _mm256_loadu_ps(tmp);
-}
-static inline __m256 __avx_repeat_f32cx8_load(ggml_fp16_t *x) {
+// __avx_f32cx8_load already defined in simd-mappings.h
+static inline __m256 __avx_repeat_f32cx8_load(const ggml_fp16_t *x) {
     float tmp[8];
 
     for (int i = 0; i < 4; i++) {
@@ -83,7 +89,7 @@ static inline __m256 __avx_repeat_f32cx8_load(ggml_fp16_t *x) {
 
     return _mm256_loadu_ps(tmp);
 }
-static inline __m256 __avx_rearranged_f32cx8_load(ggml_fp16_t *x, __m128i arrangeMask) {
+static inline __m256 __avx_rearranged_f32cx8_load(const ggml_fp16_t *x, __m128i arrangeMask) {
     uint16_t tmphalf[8];
     float tmp[8];
 
@@ -521,8 +527,8 @@ void ggml_quantize_mat_q8_K_4x8(const float * GGML_RESTRICT x, void * GGML_RESTR
 template<typename block_tx8>
 static void gemv_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc, __m256i signextendlut) {
     static_assert(
-            std::is_same_v<block_tx8, block_q4_0x8> ||
-            std::is_same_v<block_tx8, block_iq4_nlx8>,
+            std::is_same<block_tx8, block_q4_0x8>::value ||
+            std::is_same<block_tx8, block_iq4_nlx8>::value,
             "Unsupported block type");
 
     const int qk = QK8_0;
@@ -576,9 +582,9 @@ static void gemv_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t 
 
                 // Load the scale values for the 8 blocks interleaved in block_tx8
                 __m256 col_scale_f32;
-                if constexpr (
-                        std::is_same_v<block_tx8, block_q4_0x8> ||
-                        std::is_same_v<block_tx8, block_iq4_nlx8>) {
+                if (
+                        std::is_same<block_tx8, block_q4_0x8>::value ||
+                        std::is_same<block_tx8, block_iq4_nlx8>::value) {
                     col_scale_f32 = GGML_F32Cx8_REARRANGE_LOAD(b_ptr[b].d, changemask);
                 }
 
@@ -627,8 +633,8 @@ static void gemv_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t 
 template<typename block_tx8>
 static void gemm_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, const void * GGML_RESTRICT vy, int nr, int nc, __m256i signextendlut) {
     static_assert(
-            std::is_same_v<block_tx8, block_q4_0x8> ||
-            std::is_same_v<block_tx8, block_iq4_nlx8>,
+            std::is_same<block_tx8, block_q4_0x8>::value ||
+            std::is_same<block_tx8, block_iq4_nlx8>::value,
             "Unsupported block type");
 
     const int qk = QK8_0;
@@ -745,9 +751,9 @@ static void gemm_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t 
 
                 // Scale values - Load the weight scale values of two block_tx8
                 __m512 col_scale_f32;
-                if constexpr (
-                        std::is_same_v<block_tx8, block_q4_0x8> ||
-                        std::is_same_v<block_tx8, block_iq4_nlx8>) {
+                if (
+                        std::is_same<block_tx8, block_q4_0x8>::value ||
+                        std::is_same<block_tx8, block_iq4_nlx8>::value) {
                     col_scale_f32 = GGML_F32Cx8x2_LOAD(b_ptr_0[b].d, b_ptr_1[b].d);
                 }
 
@@ -937,9 +943,9 @@ static void gemm_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t 
 
                 // Scale values - Load the weight scale values of two block_tx8
                 __m512 col_scale_f32;
-                if constexpr (
-                        std::is_same_v<block_tx8, block_q4_0x8> ||
-                        std::is_same_v<block_tx8, block_iq4_nlx8>) {
+                if (
+                        std::is_same<block_tx8, block_q4_0x8>::value ||
+                        std::is_same<block_tx8, block_iq4_nlx8>::value) {
                     col_scale_f32 = GGML_F32Cx8x2_LOAD(b_ptr_0[b].d, b_ptr_1[b].d);
                 }
 
@@ -1119,9 +1125,9 @@ static void gemm_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t 
 
                 // Scale values - Load the wight scale values of block_tx8
                 __m256 col_scale_f32;
-                if constexpr (
-                        std::is_same_v<block_tx8, block_q4_0x8> ||
-                        std::is_same_v<block_tx8, block_iq4_nlx8>) {
+                if (
+                        std::is_same<block_tx8, block_q4_0x8>::value ||
+                        std::is_same<block_tx8, block_iq4_nlx8>::value) {
                     col_scale_f32 = GGML_F32Cx8_LOAD(b_ptr[b].d);
                 }
 
@@ -1279,9 +1285,9 @@ static void gemm_q4_b32_8x8_q8_0_lut_avx(int n, float * GGML_RESTRICT s, size_t 
 
                 // Scale values - Load the wight scale values of block_tx8
                 __m256 col_scale_f32;
-                if constexpr (
-                        std::is_same_v<block_tx8, block_q4_0x8> ||
-                        std::is_same_v<block_tx8, block_iq4_nlx8>) {
+                if (
+                        std::is_same<block_tx8, block_q4_0x8>::value ||
+                        std::is_same<block_tx8, block_iq4_nlx8>::value) {
                     col_scale_f32 = GGML_F32Cx8_LOAD(b_ptr[b].d);
                 }
 

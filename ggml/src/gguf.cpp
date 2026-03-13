@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <map>
 #include <new>
@@ -190,16 +191,21 @@ struct gguf_kv {
     }
 
     template <typename T>
-    const T & get_val(const size_t i = 0) const {
+    typename std::enable_if<!std::is_same<T, std::string>::value, const T &>::type
+    get_val(const size_t i = 0) const {
         GGML_ASSERT(type_to_gguf_type<T>::value == type);
-        if constexpr (std::is_same<T, std::string>::value) {
-            GGML_ASSERT(data_string.size() >= i+1);
-            return data_string[i];
-        }
         const size_t type_size = gguf_type_size(type);
         GGML_ASSERT(data.size() % type_size == 0);
         GGML_ASSERT(data.size() >= (i+1)*type_size);
         return reinterpret_cast<const T *>(data.data())[i];
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<T, std::string>::value, const T &>::type
+    get_val(const size_t i = 0) const {
+        GGML_ASSERT(type_to_gguf_type<T>::value == type);
+        GGML_ASSERT(data_string.size() >= i+1);
+        return data_string[i];
     }
 
     void cast(const enum gguf_type new_type) {
@@ -265,40 +271,66 @@ struct gguf_reader {
         return nread == size;
     }
 
+    // read vector: general case
     template <typename T>
-    bool read(std::vector<T> & dst, const size_t n) const {
+    typename std::enable_if<!std::is_same<T, std::string>::value && !std::is_same<T, bool>::value, bool>::type
+    read(std::vector<T> & dst, const size_t n) const {
         if (n > GGUF_MAX_ARRAY_ELEMENTS) {
             return false;
         }
-        if constexpr (std::is_same<T, std::string>::value) {
-            // strings are prefixed with their length, so we need to account for that
-            if (n > SIZE_MAX / sizeof(uint64_t)) {
-                return false;
-            }
-            if (nbytes_remain < n * sizeof(uint64_t)) {
-                return false;
-            }
-        } else {
-            if (n > SIZE_MAX / sizeof(T)) {
-                return false;
-            }
-            if (nbytes_remain < n * sizeof(T)) {
-                return false;
-            }
+        if (n > SIZE_MAX / sizeof(T)) {
+            return false;
+        }
+        if (nbytes_remain < n * sizeof(T)) {
+            return false;
         }
         dst.resize(n);
         for (size_t i = 0; i < dst.size(); ++i) {
-            if constexpr (std::is_same<T, bool>::value) {
-                bool tmp;
-                if (!read(tmp)) {
-                    return false;
-                }
-                dst[i] = tmp;
-            } else {
-                if (!read(dst[i])) {
-                    return false;
-                }
+            if (!read(dst[i])) {
+                return false;
             }
+        }
+        return true;
+    }
+
+    // read vector: string specialization
+    bool read(std::vector<std::string> & dst, const size_t n) const {
+        if (n > GGUF_MAX_ARRAY_ELEMENTS) {
+            return false;
+        }
+        if (n > SIZE_MAX / sizeof(uint64_t)) {
+            return false;
+        }
+        if (nbytes_remain < n * sizeof(uint64_t)) {
+            return false;
+        }
+        dst.resize(n);
+        for (size_t i = 0; i < dst.size(); ++i) {
+            if (!read(dst[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // read vector: bool specialization
+    bool read(std::vector<bool> & dst, const size_t n) const {
+        if (n > GGUF_MAX_ARRAY_ELEMENTS) {
+            return false;
+        }
+        if (n > SIZE_MAX / sizeof(bool)) {
+            return false;
+        }
+        if (nbytes_remain < n * sizeof(bool)) {
+            return false;
+        }
+        dst.resize(n);
+        for (size_t i = 0; i < dst.size(); ++i) {
+            bool tmp;
+            if (!read(tmp)) {
+                return false;
+            }
+            dst[i] = tmp;
         }
         return true;
     }
@@ -344,7 +376,7 @@ struct gguf_reader {
             return false;
         }
         dst.resize(static_cast<size_t>(size));
-        const size_t nread = fread(dst.data(), 1, size, file);
+        const size_t nread = fread(&dst[0], 1, size, file);
         nbytes_remain -= nread;
         return nread == size;
     }
@@ -1065,14 +1097,19 @@ int64_t gguf_remove_key(struct gguf_context * ctx, const char * key) {
 }
 
 template<typename T>
-static void gguf_check_reserved_keys(const std::string & key, const T val) {
+static typename std::enable_if<!std::is_same<T, uint32_t>::value>::type
+gguf_check_reserved_keys(const std::string & key, const T val) {
     if (key == GGUF_KEY_GENERAL_ALIGNMENT) {
-        if constexpr (std::is_same<T, uint32_t>::value) {
-            GGML_ASSERT(val > 0 && (val & (val - 1)) == 0 && GGUF_KEY_GENERAL_ALIGNMENT " must be power of 2");
-        } else {
-            GGML_UNUSED(val);
-            GGML_ABORT(GGUF_KEY_GENERAL_ALIGNMENT " must be type u32");
-        }
+        GGML_UNUSED(val);
+        GGML_ABORT(GGUF_KEY_GENERAL_ALIGNMENT " must be type u32");
+    }
+}
+
+template<typename T>
+static typename std::enable_if<std::is_same<T, uint32_t>::value>::type
+gguf_check_reserved_keys(const std::string & key, const T val) {
+    if (key == GGUF_KEY_GENERAL_ALIGNMENT) {
+        GGML_ASSERT(val > 0 && (val & (val - 1)) == 0 && GGUF_KEY_GENERAL_ALIGNMENT " must be power of 2");
     }
 }
 
