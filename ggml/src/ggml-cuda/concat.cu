@@ -136,13 +136,13 @@ static __global__ void __launch_bounds__(CUDA_CONCAT_BLOCK_SIZE)
         if (i0 < ne00 && i1 < ne01 && i2 < ne02 && i3 < ne03) {
             x = (const float *)(src0 + (i3       )*nb03 + (i2       )*nb02 + (i1       )*nb01 + (i0       )*nb00);
         } else {
-            if constexpr (dim == 0) {
+            if (dim == 0) {
                 x = (const float *) (src1 + i3 * nb13 + i2 * nb12 + i1 * nb11 + (i0 - ne00) * nb10);
-            } else if constexpr (dim == 1) {
+            } else if (dim == 1) {
                 x = (const float *) (src1 + i3 * nb13 + i2 * nb12 + (i1 - ne01) * nb11 + i0 * nb10);
-            } else if constexpr (dim == 2) {
+            } else if (dim == 2) {
                 x = (const float *) (src1 + i3 * nb13 + (i2 - ne02) * nb12 + i1 * nb11 + i0 * nb10);
-            } else if constexpr (dim == 3) {
+            } else if (dim == 3) {
                 x = (const float *) (src1 + (i3 - ne03) * nb13 + i2 * nb12 + i1 * nb11 + i0 * nb10);
             }
         }
@@ -190,32 +190,24 @@ void ggml_cuda_op_concat(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         }
     } else {
         dim3 grid_dim(dst->ne[1], dst->ne[2], dst->ne[3]);
-        auto launch_kernel = [&](auto dim) {
-            concat_f32_non_cont<dim><<<grid_dim, CUDA_CONCAT_BLOCK_SIZE, 0, stream>>>(
-                (const char *) src0->data, (const char *) src1->data, (char *) dst->data,
-                src0->ne[0], src0->ne[1], src0->ne[2], src0->ne[3],
-                src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3],
-                src1->ne[0], src1->ne[1], src1->ne[2], src1->ne[3],
-                src1->nb[0], src1->nb[1], src1->nb[2], src1->nb[3],
-                dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3],
-                dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3]);
-        };
+        #define LAUNCH_CONCAT_F32_NON_CONT(D) \
+            concat_f32_non_cont<D><<<grid_dim, CUDA_CONCAT_BLOCK_SIZE, 0, stream>>>( \
+                (const char *) src0->data, (const char *) src1->data, (char *) dst->data, \
+                src0->ne[0], src0->ne[1], src0->ne[2], src0->ne[3], \
+                src0->nb[0], src0->nb[1], src0->nb[2], src0->nb[3], \
+                src1->ne[0], src1->ne[1], src1->ne[2], src1->ne[3], \
+                src1->nb[0], src1->nb[1], src1->nb[2], src1->nb[3], \
+                dst->ne[0], dst->ne[1], dst->ne[2], dst->ne[3], \
+                dst->nb[0], dst->nb[1], dst->nb[2], dst->nb[3])
         switch (dim) {
-            case 0:
-                launch_kernel(std::integral_constant<int, 0>{});
-                break;
-            case 1:
-                launch_kernel(std::integral_constant<int, 1>{});
-                break;
-            case 2:
-                launch_kernel(std::integral_constant<int, 2>{});
-                break;
-            case 3:
-                launch_kernel(std::integral_constant<int, 3>{});
-                break;
+            case 0: LAUNCH_CONCAT_F32_NON_CONT(0); break;
+            case 1: LAUNCH_CONCAT_F32_NON_CONT(1); break;
+            case 2: LAUNCH_CONCAT_F32_NON_CONT(2); break;
+            case 3: LAUNCH_CONCAT_F32_NON_CONT(3); break;
             default:
                 GGML_ABORT("Invalid dim: %d", dim);
                 break;
         }
+        #undef LAUNCH_CONCAT_F32_NON_CONT
     }
 }

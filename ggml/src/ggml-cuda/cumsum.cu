@@ -212,7 +212,7 @@ static void cumsum_cub(ggml_cuda_pool & pool,
 
 template<typename T>
 static void cumsum_cuda(
-        [[maybe_unused]] ggml_backend_cuda_context & ctx, const T * src, T * dst,
+        ggml_backend_cuda_context & /*ctx*/, const T * src, T * dst,
         const int64_t ne00, const int64_t ne01, const int64_t ne02, const int64_t ne03,
         const int64_t nb00, const int64_t nb01, const int64_t nb02, const int64_t nb03,
         const int64_t  nb0,  const int64_t nb1, const int64_t  nb2, const int64_t  nb3,

@@ -319,7 +319,7 @@ void quantize_mmq_q8_1_cuda(
 void quantize_mmq_mxfp4_cuda(const float *                    x,
                              const int32_t *                  ids,
                              void *                           vy,
-                             [[maybe_unused]] const ggml_type type_src0,
+                             const ggml_type /*type_src0*/,
                              const int64_t                    ne00,
                              const int64_t                    s01,
                              const int64_t                    s02,

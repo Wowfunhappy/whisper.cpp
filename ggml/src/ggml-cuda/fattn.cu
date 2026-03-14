@@ -1,24 +1,26 @@
 #include "common.cuh"
+#include "fattn.cuh"
+
+#ifdef FLASH_ATTN_AVAILABLE
 #include "fattn-common.cuh"
 #include "fattn-mma-f16.cuh"
 #include "fattn-tile.cuh"
 #include "fattn-vec.cuh"
 #include "fattn-wmma-f16.cuh"
-#include "fattn.cuh"
 
 template <int DKQ, int DV, int ncols2>
 static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
     const ggml_tensor * Q = dst->src[0];
 
-    if constexpr (ncols2 <= 8) {
+    if (ncols2 <= 8) {
         if (turing_mma_available(cc) && Q->ne[1] <= 8/ncols2) {
             ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8/ncols2, ncols2>(ctx, dst);
             return;
         }
     }
 
-    if constexpr (ncols2 <= 16) {
+    if (ncols2 <= 16) {
         if ((turing_mma_available(cc) || amd_wmma_available(cc)) && Q->ne[1] <= 16/ncols2) {
             ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 16/ncols2, ncols2>(ctx, dst);
             return;
@@ -480,3 +482,17 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
 bool ggml_cuda_flash_attn_ext_supported(int device, const ggml_tensor * dst) {
     return ggml_cuda_get_best_fattn_kernel(device, dst) != BEST_FATTN_KERNEL_NONE;
 }
+
+#else // !FLASH_ATTN_AVAILABLE
+
+void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    GGML_UNUSED(ctx);
+    GGML_UNUSED(dst);
+    GGML_ABORT("flash attention not available");
+}
+
+bool ggml_cuda_flash_attn_ext_supported(int /*device*/, const ggml_tensor * /*dst*/) {
+    return false;
+}
+
+#endif // FLASH_ATTN_AVAILABLE

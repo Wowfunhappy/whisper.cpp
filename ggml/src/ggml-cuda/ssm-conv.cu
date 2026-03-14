@@ -95,6 +95,23 @@ static __global__ void ssm_conv_long_token_f32(const float * __restrict__ src0, 
     }
 }
 
+template <int kThreads, int kNC>
+static void ssm_conv_f32_launch(const float * src0, const float * src1, const int src0_nb0, const int src0_nb1,
+                                const int src0_nb2, const int src1_nb1, float * dst, const int dst_nb0, const int dst_nb1,
+                                const int dst_nb2, const int64_t n_t, const int64_t nr, const int64_t n_s,
+                                cudaStream_t stream) {
+    if (n_t <= 32) {
+        const dim3 blocks(n_s, (nr + kThreads - 1) / kThreads, 1);
+        ssm_conv_f32<kThreads, kNC><<<blocks, kThreads, 0, stream>>>(src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1,
+                                                                     dst, dst_nb0, dst_nb1, dst_nb2, n_t);
+    } else {
+        const int64_t split_n_t = 32;
+        dim3          blocks(n_s, (nr + kThreads - 1) / kThreads, (n_t + split_n_t - 1) / split_n_t);
+        ssm_conv_long_token_f32<kThreads, kNC, split_n_t><<<blocks, kThreads, 0, stream>>>(
+            src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t);
+    }
+}
+
 static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int src0_nb0, const int src0_nb1,
                               const int src0_nb2, const int src1_nb1, float * dst, const int dst_nb0, const int dst_nb1,
                               const int dst_nb2, const int64_t nc, const int64_t nr, const int64_t n_t,
@@ -102,24 +119,10 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int 
     const int threads = 128;
     GGML_ASSERT(nr % threads == 0);
 
-    auto launch_kernel = [&](auto NC) {
-        constexpr int kNC = decltype(NC)::value;
-        if (n_t <= 32) {
-            const dim3 blocks(n_s, (nr + threads - 1) / threads, 1);
-            ssm_conv_f32<threads, kNC><<<blocks, threads, 0, stream>>>(src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1,
-                                                                       dst, dst_nb0, dst_nb1, dst_nb2, n_t);
-        } else {
-            const int64_t split_n_t = 32;
-            dim3          blocks(n_s, (nr + threads - 1) / threads, (n_t + split_n_t - 1) / split_n_t);
-            ssm_conv_long_token_f32<threads, kNC, split_n_t><<<blocks, threads, 0, stream>>>(
-                src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t);
-        }
-    };
-
     switch (nc) {
-        case 3: launch_kernel(std::integral_constant<int, 3>{}); break;
-        case 4: launch_kernel(std::integral_constant<int, 4>{}); break;
-        case 9: launch_kernel(std::integral_constant<int, 9>{}); break;
+        case 3: ssm_conv_f32_launch<128, 3>(src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t, nr, n_s, stream); break;
+        case 4: ssm_conv_f32_launch<128, 4>(src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t, nr, n_s, stream); break;
+        case 9: ssm_conv_f32_launch<128, 9>(src0, src1, src0_nb0, src0_nb1, src0_nb2, src1_nb1, dst, dst_nb0, dst_nb1, dst_nb2, n_t, nr, n_s, stream); break;
         default: GGML_ABORT("Only support kernel sizes 3, 4, 9 right now.");
     }
 }

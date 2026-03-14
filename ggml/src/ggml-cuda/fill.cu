@@ -29,7 +29,7 @@ void ggml_cuda_op_fill(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
             fill_kernel<<<num_blocks, CUDA_FILL_BLOCK_SIZE, 0, stream>>>((float *)dst_d, k, value);
             break;
         case GGML_TYPE_F16:
-            fill_kernel<<<num_blocks, CUDA_FILL_BLOCK_SIZE, 0, stream>>>((half *)dst_d, k, ggml_cuda_cast<half>(value));
+            fill_kernel<<<num_blocks, CUDA_FILL_BLOCK_SIZE, 0, stream>>>((half *)dst_d, k, __float2half(value));
             break;
         default:
             GGML_ABORT("unsupported type");

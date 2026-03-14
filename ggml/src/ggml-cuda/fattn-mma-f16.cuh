@@ -243,7 +243,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile(
         const half2 * const __restrict__ KV, half2 * const __restrict__ tile_KV, const int D2, const int stride_KV, const int i_sup) {
     // K/V data is loaded with decreasing granularity for D for better memory bandwidth.
     // The minimum granularity with cp.async is 16 bytes, with synchronous data loading it's 4 bytes.
-    if constexpr (use_cp_async) {
+    if (use_cp_async) {
         static_assert(!oob_check, "OOB check not compatible with cp_async");
         constexpr int preload = 64;
         constexpr int h2_per_chunk = 16/sizeof(half2);
@@ -324,7 +324,7 @@ template<int ncols1, int nwarps, int nbatch_fa, bool use_cp_async, bool oob_chec
 static __device__ __forceinline__ void flash_attn_ext_f16_load_mask(
         const half * const __restrict__ mask_h, half * const __restrict__ tile_mask,
         const int stride_mask, const int i_sup, const int j0, const uint3 ne01) {
-    if constexpr (use_cp_async) {
+    if (use_cp_async) {
         static_assert(nbatch_fa <= 8*WARP_SIZE && nbatch_fa % 8 == 0, "bad nbatch_fa");
         static_assert(!oob_check, "OOB check incompatible with cp_async");
         constexpr int preload = nbatch_fa >= 32 ? nbatch_fa * sizeof(half) : 64;
@@ -346,7 +346,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_mask(
 
             cp_async_cg_16<preload>(tile_mask_32 + j_sram*(nbatch_fa*sizeof(half) + 16) + i*sizeof(half), mask_h + j_vram*stride_mask + i);
         }
-    } else if constexpr (oob_check) {
+    } else if (oob_check) {
 #pragma unroll
         for (int j1 = 0; j1 < ncols1; j1 += nwarps) {
             const int j_sram = j1 + threadIdx.y;
@@ -363,7 +363,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_mask(
                 tile_mask[j_sram*(nbatch_fa + 8) + i] = i < i_sup ? mask_h[j_vram*stride_mask + i] : half(0.0f);
             }
         }
-    } else if constexpr (nbatch_fa < 2*WARP_SIZE) {
+    } else if (nbatch_fa < 2*WARP_SIZE) {
         constexpr int cols_per_warp = 2*WARP_SIZE/nbatch_fa;
         constexpr int stride_j = nwarps * cols_per_warp;
 #pragma unroll
@@ -453,7 +453,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
     T_C_KQ KQ_C[nbatch_fa/(np*T_C_KQ::J)];
 #endif // defined(TURING_MMA_AVAILABLE)
 
-    if constexpr (nstages > 1) {
+    if (nstages > 1) {
         static_assert(!oob_check, "OOB check incompatible with multi-stage pipeline");
         static_assert(!V_is_K_view, "K data reuse not implemented multi-stage loading");
         static_assert(nbatch_K2 == DKQ/2, "batching not implemented for multi stage loading");
@@ -477,7 +477,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         const int k0_stop = k0_start + nbatch_K2 < DKQ/2 ? k0_start + nbatch_K2 : DKQ/2;
         const int k0_diff = k0_stop - k0_start;
 
-        if constexpr (nstages <= 1) {
+        if (nstages <= 1) {
             constexpr bool use_cp_async = nstages == 1;
             flash_attn_ext_f16_load_tile<stride_tile_K, nwarps, nbatch_fa, use_cp_async, oob_check>
                 (K_h2 + int64_t(k_VKQ_0)*stride_K + k0_start, tile_K, k0_diff, stride_K, k_VKQ_sup);
@@ -488,7 +488,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         }
 
         // Calculate tile of KQ:
-        if constexpr (Q_in_reg) {
+        if (Q_in_reg) {
 #pragma unroll
             for (int i_KQ_00 = 0; i_KQ_00 < nbatch_fa; i_KQ_00 += np*T_A_KQ::I) {
                 const int i_KQ_0 = i_KQ_00 + (threadIdx.y % np)*T_A_KQ::I;
@@ -496,7 +496,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
                 for (int k_KQ_0 = k0_start; k_KQ_0 < k0_stop; k_KQ_0 += T_A_KQ::J) {
                     T_A_KQ K_A;
                     load_ldmatrix(K_A, tile_K + i_KQ_0*stride_tile_K + (k_KQ_0 - k0_start), stride_tile_K);
-                    if constexpr (cols_per_warp == 8) {
+                    if (cols_per_warp == 8) {
                         mma(KQ_C[i_KQ_00/(np*T_A_KQ::I)], K_A, Q_B[k_KQ_0/T_A_KQ::J]);
                     } else {
                         // Wide version of KQ_C is column-major
@@ -522,7 +522,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
                     T_A_KQ K_A;
                     load_ldmatrix(K_A, tile_K + i_KQ_0*stride_tile_K + (k_KQ_0 - k0_start), stride_tile_K);
 
-                    if constexpr (cols_per_warp == 8) {
+                    if (cols_per_warp == 8) {
                         mma(KQ_C[i_KQ_00/(np*T_A_KQ::I)], K_A, Q_B[0]);
                     } else {
                         // Wide version of KQ_C is column-major
@@ -538,7 +538,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
             }
         }
 
-        if constexpr (nstages <= 1) {
+        if (nstages <= 1) {
             __syncthreads(); // Only needed if tile_K == tile_V.
         }
     }
@@ -562,7 +562,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
     }
     float KQ_rowsum_add[cols_per_thread] = {0.0f};
 
-    if constexpr (cols_per_warp == 8) {
+    if (cols_per_warp == 8) {
         if (ncols2 > 1 || mask_h) {
 #pragma unroll
             for (int i00 = 0; i00 < nbatch_fa; i00 += np*T_C_KQ::I) {
@@ -717,7 +717,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         }
 
 #if defined(TURING_MMA_AVAILABLE)
-        if constexpr (cols_per_warp == 8) {
+        if (cols_per_warp == 8) {
             const half2 KQ_max_scale_h2 = make_half2(KQ_max_scale[0], KQ_max_scale[cols_per_thread - 1]);
 #pragma unroll
             for (int i = 0; i < DV/T_C_VKQ::I; ++i) {
@@ -765,7 +765,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
     // Convert KQ C tiles into B tiles for VKQ calculation:
     T_B_VKQ B[nbatch_fa/(np*2*T_B_VKQ::J)];
     static_assert(nbatch_fa % (np*2*T_B_VKQ::J) == 0, "bad loop size");
-    if constexpr (cols_per_warp == 8) {
+    if (cols_per_warp == 8) {
 #pragma unroll
         for (int k = 0; k < nbatch_fa/(np*2*T_B_VKQ::J); ++k) {
             B[k] = get_transposed(get_half2(KQ_C[k]));
@@ -776,7 +776,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         }
     }
 
-    if constexpr (nstages > 1) {
+    if (nstages > 1) {
         static_assert(!V_is_K_view, "K data reuse not implemented multi-stage loading");
         // Preload K tile for next iteration:
         constexpr bool use_cp_async = true;
@@ -805,7 +805,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         const int i0_stop = i0_start + 2*nbatch_V2;
         const int i0_diff = i0_stop - i0_start;
 
-        if constexpr (nstages <= 1) {
+        if (nstages <= 1) {
             if (!V_is_K_view || i0_stop > 2*nbatch_K2) {
                 constexpr bool use_cp_async = nstages == 1;
                 flash_attn_ext_f16_load_tile<stride_tile_V, nwarps, nbatch_fa, use_cp_async, oob_check>
@@ -837,7 +837,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
                 load_ldmatrix(A_trans, tile_V_i + 2*k0*stride_tile_V + (i_VKQ_0 - i0_start)/2, stride_tile_V);
                 mma(A, A_trans, A_identity);
 #endif // defined(TURING_MMA_AVAILABLE)
-                if constexpr (T_B_KQ::I == 8) {
+                if (T_B_KQ::I == 8) {
                     mma(VKQ_C[i_VKQ_0/i0_stride], A, B[k00/(np*T_A_VKQ::J)]);
                 } else {
                     // Wide version of VKQ_C is column-major.
@@ -868,7 +868,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         }
 #endif // defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
 
-        if constexpr (nstages <= 1) {
+        if (nstages <= 1) {
             __syncthreads(); // Only needed if tile_K == tile_V.
         }
     }
@@ -1059,7 +1059,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     int kb0 = kb0_start;
 
     // Preload mask and K data for first iteration when using cp_async with multiple stages:
-    if constexpr (nstages > 1) {
+    if (nstages > 1) {
         static_assert(nbatch_K2 == DKQ/2, "batching not implemented for multi-stage pipeline");
         constexpr bool use_cp_async = true;
         constexpr bool oob_check    = false;
@@ -1073,7 +1073,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     }
 
     // kb0_start is always < kb0_stop so the last iter can be executed unconditionally.
-    if constexpr (ncols2 == 1) {
+    if (ncols2 == 1) {
         constexpr bool oob_check = true;
         for (; kb0 < kb0_stop-1; ++kb0) {
             constexpr bool last_iter = false;
@@ -1117,7 +1117,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
     // With multi-stage loading there is no __syncthreads at the end of the iter,
     //     there can be a race condition on shared memory access for combining/writing back results.
-    if constexpr (nstages > 1 && nwarps*cols_per_warp > nbatch_fa) {
+    if (nstages > 1 && nwarps*cols_per_warp > nbatch_fa) {
         __syncthreads();
     }
 
@@ -1167,7 +1167,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         }
 
 #if defined(TURING_MMA_AVAILABLE)
-        if constexpr (cols_per_warp == 8) {
+        if (cols_per_warp == 8) {
             const half2 KQ_max_scale_h2 = make_half2(KQ_max_scale[0], KQ_max_scale[cols_per_thread - 1]);
 #pragma unroll
             for (int i = 0; i < DV/T_C_VKQ::I; ++i) {
@@ -1218,7 +1218,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     constexpr int tile_stride = nbatch_combine + 4;
     static_assert((DV/2) % nbatch_combine == 0, "bad nbatch_combine");
 
-    if constexpr (cols_per_warp == 8) {
+    if (cols_per_warp == 8) {
         const int jc_cwmo = (threadIdx.x % (2*T_C_VKQ::J)) / T_C_VKQ::J; // jc combine write meta offset
         const int jc_cwm = threadIdx.y*(2*T_C_VKQ::J) + 2*T_C_VKQ::get_j(-1) + jc_cwmo; // jc combine write meta
         const float2 KQ_cmr = make_float2(KQ_max[jc_cwmo], KQ_rowsum[jc_cwmo]); // KQ combine max rowsum
@@ -1335,7 +1335,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         }
 
         // Combined KQ max + rowsum.
-        static_assert(cols_per_warp <= WARP_SIZE);
+        static_assert(cols_per_warp <= WARP_SIZE, "cols_per_warp exceeds WARP_SIZE");
         if (needs_fixup && (cols_per_warp == WARP_SIZE || threadIdx.x < cols_per_warp)) {
             float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
             dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
@@ -1353,7 +1353,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
 #pragma unroll
     for (int k00 = 0; k00 < DV/2; k00 += nbatch_combine) {
-        if constexpr (cols_per_warp == 8) {
+        if (cols_per_warp == 8) {
             const int jc_cwd = threadIdx.y*T_B_KQ::I + T_B_KQ::get_i(-1); // jc combine write data
 #pragma unroll
             for (int k1 = 0; k1 < nbatch_combine; k1 += T_B_KQ::J) {

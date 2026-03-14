@@ -31,26 +31,41 @@ to_fp32_nc_cuda_t ggml_get_to_fp32_nc_cuda(ggml_type type);
 to_fp16_nc_cuda_t ggml_get_to_fp16_nc_cuda(ggml_type type);
 to_bf16_nc_cuda_t ggml_get_to_bf16_nc_cuda(ggml_type type);
 
+// Generic cast: default is via float (device-only due to half intrinsics in CUDA 7.5)
 template<typename dst_t, typename src_t>
- __host__ __device__ inline dst_t ggml_cuda_cast(src_t x) {
-    if constexpr (std::is_same_v<dst_t, src_t>) {
-        return x;
-    } else if constexpr(std::is_same_v<dst_t, nv_bfloat16>) {
-        return __float2bfloat16(float(x));
-    } else if constexpr(std::is_same_v<src_t, nv_bfloat16>) {
-        return __bfloat162float(x);
-    } else if constexpr(std::is_same_v<src_t, float2> && std::is_same_v<dst_t, half2>) {
-        return __float22half2_rn(x);
-    } else if constexpr(std::is_same_v<src_t, float2> && std::is_same_v<dst_t, nv_bfloat162>) {
-        // bypass compile error on cuda 12.0.1
-#ifdef GGML_USE_HIP
-        return __float22bfloat162_rn(x);
-#else
-        return {x.x, x.y};
-#endif // GGML_USE_HIP
-    } else if constexpr(std::is_same_v<dst_t, int32_t>) {
-        return int32_t(x);
-    } else {
-        return float(x);
-    }
+__device__ inline dst_t ggml_cuda_cast(src_t x) {
+    return (dst_t)float(x);
 }
+
+// Identity casts
+template<> __device__ inline float       ggml_cuda_cast<float,       float>      (float x)       { return x; }
+template<> __device__ inline half         ggml_cuda_cast<half,        half>       (half x)        { return x; }
+template<> __device__ inline nv_bfloat16  ggml_cuda_cast<nv_bfloat16, nv_bfloat16>(nv_bfloat16 x){ return x; }
+template<> __device__ inline int32_t      ggml_cuda_cast<int32_t,     int32_t>    (int32_t x)     { return x; }
+
+// To bfloat16
+template<> __device__ inline nv_bfloat16 ggml_cuda_cast<nv_bfloat16, float>(float x)  { return __float2bfloat16(x); }
+template<> __device__ inline nv_bfloat16 ggml_cuda_cast<nv_bfloat16, half>(half x)    { return __float2bfloat16(__half2float(x)); }
+
+// From bfloat16
+template<> __device__ inline float ggml_cuda_cast<float, nv_bfloat16>(nv_bfloat16 x) { return __bfloat162float(x); }
+template<> __device__ inline half  ggml_cuda_cast<half,  nv_bfloat16>(nv_bfloat16 x) { return __float2half(__bfloat162float(x)); }
+
+// float <-> half
+template<> __device__ inline half  ggml_cuda_cast<half,  float>(float x) { return __float2half(x); }
+template<> __device__ inline float ggml_cuda_cast<float, half>(half x)   { return __half2float(x); }
+
+// float2 -> half2
+template<> __device__ inline half2 ggml_cuda_cast<half2, float2>(float2 x) { return __float22half2_rn(x); }
+
+// float2 -> nv_bfloat162
+template<> __device__ inline nv_bfloat162 ggml_cuda_cast<nv_bfloat162, float2>(float2 x) {
+    nv_bfloat162 r;
+    r.x = __float2bfloat16(x.x);
+    r.y = __float2bfloat16(x.y);
+    return r;
+}
+
+// To int32_t
+template<> __device__ inline int32_t ggml_cuda_cast<int32_t, float>(float x) { return (int32_t)x; }
+template<> __device__ inline int32_t ggml_cuda_cast<int32_t, half>(half x)   { return (int32_t)__half2float(x); }

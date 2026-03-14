@@ -28,7 +28,7 @@ __launch_bounds__(ggml_cuda_get_physical_warp_size(), 1)
 static __global__ void mm_ids_helper(
         const int32_t * __restrict__ ids, int32_t * __restrict__ ids_src1, int32_t * __restrict__ ids_dst, int32_t * __restrict__ expert_bounds,
         const int n_tokens, const int n_expert_used_var, const int nchannels_y, const int si1, const int sis1) {
-    constexpr int warp_size = ggml_cuda_get_physical_warp_size();
+    const int warp_size = ggml_cuda_get_physical_warp_size();
     const int n_expert_used = n_expert_used_template == 0 ? n_expert_used_var : n_expert_used_template;
     const int expert = blockIdx.x;
 
@@ -38,7 +38,7 @@ static __global__ void mm_ids_helper(
     int nex_prev   = 0; // Number of columns for experts with a lower index.
     int it_compact = 0; // Running index for the compact slice of this expert.
 
-    if constexpr (n_expert_used_template == 0) {
+    if (n_expert_used_template == 0) {
         // Generic implementation:
         for (int it = 0; it < n_tokens; ++it) {
             int iex_used = -1; // The index at which the expert is used, if any.
@@ -54,14 +54,15 @@ static __global__ void mm_ids_helper(
                 store[it_compact] = mm_ids_helper_store(it, iex_used);
             }
 
-            if (warp_reduce_any<warp_size>(iex_used != -1)) {
+            if (warp_reduce_any<WARP_SIZE>(iex_used != -1)) {
                 it_compact++;
             }
         }
     } else {
         // Implementation optimized for specific numbers of experts used:
-        static_assert(n_expert_used == 6 || warp_size % n_expert_used == 0, "bad n_expert_used");
-        const int neu_padded = n_expert_used == 6 ? 8 : n_expert_used; // Padded to next higher power of 2.
+        static_assert(n_expert_used_template == 0 || n_expert_used_template == 6 || 32 % n_expert_used_template == 0, "bad n_expert_used");
+        // Compile-time constant for template args (safe default of 1 when n_expert_used_template==0, which never executes this branch):
+        enum { neu_padded = n_expert_used_template == 0 ? 1 : (n_expert_used_template == 6 ? 8 : n_expert_used_template) };
         for (int it0 = 0; it0 < n_tokens; it0 += warp_size/neu_padded) {
             const int it = it0 + threadIdx.x / neu_padded;
 
@@ -92,7 +93,7 @@ static __global__ void mm_ids_helper(
             it_compact += __shfl_sync(0xFFFFFFFF, it_compact_add_lower + it_compact_add_self, warp_size - 1, warp_size);
         }
     }
-    nex_prev = warp_reduce_sum<warp_size>(nex_prev);
+    nex_prev = warp_reduce_sum<WARP_SIZE>(nex_prev);
 
     for (int itc = threadIdx.x; itc < it_compact; itc += warp_size) {
         const mm_ids_helper_store store_it = store[itc];

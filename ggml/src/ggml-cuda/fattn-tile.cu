@@ -1,4 +1,6 @@
 #include "common.cuh"
+
+#ifdef FLASH_ATTN_AVAILABLE
 #include "fattn-tile.cuh"
 #include "fattn-wmma-f16.cuh"
 
@@ -47,3 +49,4 @@ void ggml_cuda_flash_attn_ext_tile(ggml_backend_cuda_context & ctx, ggml_tensor 
         } break;
     }
 }
+#endif // FLASH_ATTN_AVAILABLE

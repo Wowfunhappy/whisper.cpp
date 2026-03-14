@@ -258,7 +258,7 @@
 #define GGML_UNUSED(x) (void)(x)
 #ifdef __CUDACC__
 template<typename... Args>
-__host__ __device__ constexpr inline void ggml_unused_vars_impl(Args&&...) noexcept {}
+__host__ __device__ inline void ggml_unused_vars_impl(Args&&...) noexcept {}
 #define GGML_UNUSED_VARS(...) ggml_unused_vars_impl(__VA_ARGS__)
 #else
 #define GGML_UNUSED_VARS(...) do { (void)sizeof((__VA_ARGS__, 0)); } while(0)

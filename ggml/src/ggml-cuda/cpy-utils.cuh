@@ -3,7 +3,7 @@
 #include "ggml-common.h"
 #include "convert.cuh"
 
-static __device__ __forceinline__ int best_index_int8(int n, const int8_t * val, float x) {
+__device__ __forceinline__ int best_index_int8(int n, const int8_t * val, float x) {
     if (x <= val[0]) return 0;
     if (x >= val[n-1]) return n-1;
     int ml = 0, mu = n-1;
@@ -14,7 +14,7 @@ static __device__ __forceinline__ int best_index_int8(int n, const int8_t * val,
     return x - val[mu-1] < val[mu] - x ? mu-1 : mu;
 }
 
-static __device__ void quantize_f32_q4_0_block(const float * __restrict__ x, block_q4_0 * __restrict__ y) {
+__device__ __forceinline__ void quantize_f32_q4_0_block(const float * __restrict__ x, block_q4_0 * __restrict__ y) {
     float amax = 0.0f;
     float vmax = 0.0f;
 
@@ -43,7 +43,7 @@ static __device__ void quantize_f32_q4_0_block(const float * __restrict__ x, blo
     }
 }
 
-static __device__ void quantize_f32_q4_1_block(const float * __restrict__ x, block_q4_1 * __restrict__ y) {
+__device__ __forceinline__ void quantize_f32_q4_1_block(const float * __restrict__ x, block_q4_1 * __restrict__ y) {
     float vmin = FLT_MAX;
     float vmax = -FLT_MAX;
 
@@ -71,7 +71,7 @@ static __device__ void quantize_f32_q4_1_block(const float * __restrict__ x, blo
     }
 }
 
-static __device__ void quantize_f32_q5_0_block(const float * __restrict__ x, block_q5_0 * __restrict__ y) {
+__device__ __forceinline__ void quantize_f32_q5_0_block(const float * __restrict__ x, block_q5_0 * __restrict__ y) {
     float amax = 0.0f;
     float vmax = 0.0f;
 
@@ -103,7 +103,7 @@ static __device__ void quantize_f32_q5_0_block(const float * __restrict__ x, blo
     memcpy(y->qh, &qh, sizeof(qh));
 }
 
-static __device__ void quantize_f32_q5_1_block(const float * __restrict__ x, block_q5_1 * __restrict__ y) {
+__device__ __forceinline__ void quantize_f32_q5_1_block(const float * __restrict__ x, block_q5_1 * __restrict__ y) {
     float min = x[0];
     float max = x[0];
 
@@ -134,7 +134,7 @@ static __device__ void quantize_f32_q5_1_block(const float * __restrict__ x, blo
     memcpy(y->qh, &qh, sizeof(qh));
 }
 
-static __device__ void quantize_f32_q8_0_block(const float * __restrict__ x, block_q8_0 * __restrict__ y) {
+__device__ __forceinline__ void quantize_f32_q8_0_block(const float * __restrict__ x, block_q8_0 * __restrict__ y) {
     float amax = 0.0f; // absolute max
 
     for (int j = 0; j < QK8_0; j++) {
@@ -153,7 +153,7 @@ static __device__ void quantize_f32_q8_0_block(const float * __restrict__ x, blo
     }
 }
 
-static __device__ void quantize_f32_iq4_nl_block(const float * __restrict__ x, block_iq4_nl * __restrict__ y) {
+__device__ __forceinline__ void quantize_f32_iq4_nl_block(const float * __restrict__ x, block_iq4_nl * __restrict__ y) {
     float amax = 0.0f;
     float vmax = 0.0f;
 
@@ -187,31 +187,31 @@ static __device__ void quantize_f32_iq4_nl_block(const float * __restrict__ x, b
 }
 
 // Wrapper functions for cpy.cu compatibility
-static __device__ void cpy_blck_f32_q4_0(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_blck_f32_q4_0(const char * cxi, char * cdsti) {
     quantize_f32_q4_0_block((const float *)cxi, (block_q4_0 *)cdsti);
 }
 
-static __device__ void cpy_blck_f32_q4_1(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_blck_f32_q4_1(const char * cxi, char * cdsti) {
     quantize_f32_q4_1_block((const float *)cxi, (block_q4_1 *)cdsti);
 }
 
-static __device__ void cpy_blck_f32_q5_0(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_blck_f32_q5_0(const char * cxi, char * cdsti) {
     quantize_f32_q5_0_block((const float *)cxi, (block_q5_0 *)cdsti);
 }
 
-static __device__ void cpy_blck_f32_q5_1(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_blck_f32_q5_1(const char * cxi, char * cdsti) {
     quantize_f32_q5_1_block((const float *)cxi, (block_q5_1 *)cdsti);
 }
 
-static __device__ void cpy_blck_f32_q8_0(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_blck_f32_q8_0(const char * cxi, char * cdsti) {
     quantize_f32_q8_0_block((const float *)cxi, (block_q8_0 *)cdsti);
 }
 
-static __device__ void cpy_blck_f32_iq4_nl(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_blck_f32_iq4_nl(const char * cxi, char * cdsti) {
     quantize_f32_iq4_nl_block((const float *)cxi, (block_iq4_nl *)cdsti);
 }
 
 template<typename src_t, typename dst_t>
-static __device__ void cpy_1_scalar(const char * cxi, char * cdsti) {
+__device__ __forceinline__ void cpy_1_scalar(const char * cxi, char * cdsti) {
     *(dst_t *) cdsti = ggml_cuda_cast<dst_t>(*(const src_t *) cxi);
 }

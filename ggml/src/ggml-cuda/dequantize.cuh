@@ -1,6 +1,6 @@
 #include "common.cuh"
 
-static __device__ __forceinline__ void dequantize_q4_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
+__device__ __forceinline__ void dequantize_q4_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
     const block_q4_0 * x = (const block_q4_0 *) vx;
 
     const float d = x[ib].d;
@@ -14,7 +14,7 @@ static __device__ __forceinline__ void dequantize_q4_0(const void * vx, const in
     v.y = (v.y - 8.0f) * d;
 }
 
-static __device__ __forceinline__ void dequantize_q4_1(const void * vx, const int64_t ib, const int iqs, float2 & v){
+__device__ __forceinline__ void dequantize_q4_1(const void * vx, const int64_t ib, const int iqs, float2 & v){
     const block_q4_1 * x = (const block_q4_1 *) vx;
 
     const float2 dm = __half22float2(x[ib].dm);
@@ -28,7 +28,7 @@ static __device__ __forceinline__ void dequantize_q4_1(const void * vx, const in
     v.y = (v.y * dm.x) + dm.y;
 }
 
-static __device__ __forceinline__ void dequantize_q5_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
+__device__ __forceinline__ void dequantize_q5_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
     const block_q5_0 * x = (const block_q5_0 *) vx;
 
     const float d = x[ib].d;
@@ -46,7 +46,7 @@ static __device__ __forceinline__ void dequantize_q5_0(const void * vx, const in
     v.y = (v.y - 16.0f) * d;
 }
 
-static __device__ __forceinline__ void dequantize_q5_1(const void * vx, const int64_t ib, const int iqs, float2 & v){
+__device__ __forceinline__ void dequantize_q5_1(const void * vx, const int64_t ib, const int iqs, float2 & v){
     const block_q5_1 * x = (const block_q5_1 *) vx;
 
     const float2 dm = __half22float2(x[ib].dm);
@@ -64,7 +64,7 @@ static __device__ __forceinline__ void dequantize_q5_1(const void * vx, const in
     v.y = (v.y * dm.x) + dm.y;
 }
 
-static __device__ __forceinline__ void dequantize_q8_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
+__device__ __forceinline__ void dequantize_q8_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
     const block_q8_0 * x = (const block_q8_0 *) vx;
 
     const float d = x[ib].d;

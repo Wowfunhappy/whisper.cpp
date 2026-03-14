@@ -91,7 +91,7 @@ static __global__ void cpy_scalar_transpose(const char * cx, char * cdst, const 
         nb12, nb13);
 }
 
-static __device__ void cpy_blck_q8_0_f32(const char * cxi, char * cdsti) {
+__device__ void cpy_blck_q8_0_f32(const char * cxi, char * cdsti) {
     float * cdstf = (float *)(cdsti);
 
 #pragma unroll
@@ -104,7 +104,7 @@ static __device__ void cpy_blck_q8_0_f32(const char * cxi, char * cdsti) {
 }
 
 template<dequantize_kernel_t dequant, int qk>
-static __device__ void cpy_blck_q_f32(const char * cxi, char * cdsti) {
+__device__ void cpy_blck_q_f32(const char * cxi, char * cdsti) {
     float * cdstf = (float *)(cdsti);
 
 #pragma unroll

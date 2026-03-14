@@ -2,24 +2,39 @@
 #include <cstdint>
 #include <utility>
 
-static __device__ __forceinline__ float op_repeat(const float a, const float b) {
+// C++11-compatible index_sequence (std::index_sequence is C++14)
+#if __cplusplus < 201402L
+namespace ggml_cuda_compat {
+template<size_t... Is> struct index_sequence {};
+template<size_t N, size_t... Is> struct make_index_sequence_impl : make_index_sequence_impl<N-1, N-1, Is...> {};
+template<size_t... Is> struct make_index_sequence_impl<0, Is...> { typedef index_sequence<Is...> type; };
+template<size_t N> using make_index_sequence = typename make_index_sequence_impl<N>::type;
+} // namespace ggml_cuda_compat
+// Pull into std so existing code using std:: qualifiers continues to work
+namespace std {
+using ggml_cuda_compat::index_sequence;
+using ggml_cuda_compat::make_index_sequence;
+}
+#endif
+
+__device__ __forceinline__ float op_repeat(const float a, const float b) {
     return b;
     GGML_UNUSED(a);
 }
 
-static __device__ __forceinline__ float op_add(const float a, const float b) {
+__device__ __forceinline__ float op_add(const float a, const float b) {
     return a + b;
 }
 
-static __device__ __forceinline__ float op_sub(const float a, const float b) {
+__device__ __forceinline__ float op_sub(const float a, const float b) {
     return a - b;
 }
 
-static __device__ __forceinline__ float op_mul(const float a, const float b) {
+__device__ __forceinline__ float op_mul(const float a, const float b) {
     return a * b;
 }
 
-static __device__ __forceinline__ float op_div(const float a, const float b) {
+__device__ __forceinline__ float op_div(const float a, const float b) {
     return a / b;
 }
 
@@ -76,8 +91,9 @@ static __global__ void k_bin_bcast(const src0_t *         src0,
         const uint32_t i10 = fastmodulo(i0, ne10);
 
         float result = src0_row ? (float) src0_row[i0*s00] : 0.0f;
-        if constexpr (sizeof...(src1_ptrs) > 0) {
-            result = (..., (result = bin_op(result, (float)src1s[i_src1 + i10*s10])));
+        if (sizeof...(src1_ptrs) > 0) {
+            int dummy[] = {0, (result = bin_op(result, (float)src1s[i_src1 + i10*s10]), 0)...};
+            (void)dummy;
         } else {
             result = bin_op(result, (float)src1[i_src1 + i10*s10]);
         }
@@ -142,8 +158,9 @@ static __global__ void k_bin_bcast_unravel(const src0_t *         src0,
     const int i10 = fastmodulo(i0, ne10);
 
     float result = src0_row ? (float) src0_row[i0*s00] : 0.0f;
-    if constexpr (sizeof...(src1_ptrs) > 0) {
-        result = (..., (result = bin_op(result, (float)src1s[i_src1 + i10*s10])));
+    if (sizeof...(src1_ptrs) > 0) {
+        int dummy[] = {0, (result = bin_op(result, (float)src1s[i_src1 + i10*s10]), 0)...};
+        (void)dummy;
     } else {
         result = bin_op(result, (float)src1[i_src1 + i10*s10]);
     }
@@ -282,7 +299,7 @@ static void launch_bin_bcast_pack(const ggml_tensor * src0, const ggml_tensor * 
             const uint3 ne1_fastdiv = init_fastdiv_values((uint32_t) ne1);
             const uint3 ne2_fastdiv = init_fastdiv_values((uint32_t) ne2);
 
-            if constexpr (sizeof...(I) > 0) {
+            if (sizeof...(I) > 0) {
                 k_bin_bcast_unravel<bin_op, src0_t, src1_t, dst_t><<<block_num, block_size, 0, stream>>>(
                     src0_dd, src1_dd, dst_dd, ne0_fastdiv, ne1_fastdiv, ne2_fastdiv, ne3, prod_012, prod_01, ne10, ne11,
                     ne12, ne13,
@@ -299,7 +316,7 @@ static void launch_bin_bcast_pack(const ggml_tensor * src0, const ggml_tensor * 
             }
         } else {
             const uint3 ne3_fastdiv = init_fastdiv_values((uint32_t) ne3);
-            if constexpr (sizeof...(I) > 0) {
+            if (sizeof...(I) > 0) {
                 k_bin_bcast<bin_op, src0_t, src1_t, dst_t><<<block_nums, block_dims, 0, stream>>>(
                     src0_dd, src1_dd, dst_dd, ne0, ne1, ne2, ne3_fastdiv, ne10, ne11, ne12, ne13,
                   /*s0,*/ s1, s2,  s3,

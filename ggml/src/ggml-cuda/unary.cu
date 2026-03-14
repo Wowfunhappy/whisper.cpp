@@ -1,111 +1,111 @@
 #include "unary.cuh"
 #include "convert.cuh"
 
-static __device__ __forceinline__ float op_abs(float x) {
+__device__ __forceinline__ float op_abs(float x) {
     return fabsf(x);
 }
 
-static __device__ __forceinline__ float op_sgn(float x) {
+__device__ __forceinline__ float op_sgn(float x) {
     return (x > 0.f ? 1.f : ((x < 0.f ? -1.f : 0.f)));
 }
 
-static __device__ __forceinline__ float op_neg(float x) {
+__device__ __forceinline__ float op_neg(float x) {
     return -x;
 }
 
-static __device__ __forceinline__ float op_step(float x) {
+__device__ __forceinline__ float op_step(float x) {
     return x > 0.0f;
 }
 
-static __device__ __forceinline__ float op_gelu(float x) {
+__device__ __forceinline__ float op_gelu(float x) {
     return ggml_cuda_op_gelu_single(x);
 }
 
-static __device__ __forceinline__ float op_gelu_erf(float x) {
+__device__ __forceinline__ float op_gelu_erf(float x) {
     const float SQRT_2_INV = 0.70710678118654752440084436210484f;
 
     return 0.5f*x*(1.0f + erff(x*SQRT_2_INV));
 }
 
-static __device__ __forceinline__ float op_gelu_quick(float x) {
+__device__ __forceinline__ float op_gelu_quick(float x) {
     const float GELU_QUICK_COEF = -1.702f;
 
     return x * (1.0f / (1.0f + expf(GELU_QUICK_COEF * x)));
 }
 
-static __device__ __forceinline__ float op_silu(float x) {
+__device__ __forceinline__ float op_silu(float x) {
     return ggml_cuda_op_silu_single(x);
 }
 
-static __device__ __forceinline__ float op_tanh(float x) {
+__device__ __forceinline__ float op_tanh(float x) {
     return tanhf(x);
 }
 
-static __device__ __forceinline__ float op_relu(float x) {
+__device__ __forceinline__ float op_relu(float x) {
     return fmaxf(x, 0);
 }
 
-static __device__ __forceinline__ float op_sigmoid(float x) {
+__device__ __forceinline__ float op_sigmoid(float x) {
     return 1.0f / (1.0f + expf(-x));
 }
 
-static __device__ __forceinline__ float op_hardsigmoid(float x) {
+__device__ __forceinline__ float op_hardsigmoid(float x) {
     return fminf(1.0f, fmaxf(0.0f, (x + 3.0f) / 6.0f));
 }
 
-static __device__ __forceinline__ float op_hardswish(float x) {
+__device__ __forceinline__ float op_hardswish(float x) {
     return x * fminf(1.0f, fmaxf(0.0f, (x + 3.0f) / 6.0f));
 }
 
-static __device__ __forceinline__ float op_exp(float x) {
+__device__ __forceinline__ float op_exp(float x) {
     return expf(x);
 }
 
-static __device__ __forceinline__ float op_sqr(float x) {
+__device__ __forceinline__ float op_sqr(float x) {
     return x * x;
 }
 
-static __device__ __forceinline__ float op_sqrt(float x) {
+__device__ __forceinline__ float op_sqrt(float x) {
     return sqrtf(x);
 }
 
-static __device__ __forceinline__ float op_sin(float x) {
+__device__ __forceinline__ float op_sin(float x) {
     return sinf(x);
 }
 
-static __device__ __forceinline__ float op_cos(float x) {
+__device__ __forceinline__ float op_cos(float x) {
     return cosf(x);
 }
 
-static __device__ __forceinline__ float op_log(float x) {
+__device__ __forceinline__ float op_log(float x) {
     return logf(x);
 }
 
-static __device__ __forceinline__ float op_expm1(float x) {
+__device__ __forceinline__ float op_expm1(float x) {
     return expm1f(x);
 }
 
-static __device__ __forceinline__ float op_softplus(float x) {
+__device__ __forceinline__ float op_softplus(float x) {
     return (x > 20.0f) ? x : logf(1.0f + expf(x));
 }
 
-static __device__ __forceinline__ float op_elu(float x) {
+__device__ __forceinline__ float op_elu(float x) {
     return (x > 0.f) ? x : expm1f(x);
 }
 
-static __device__ __forceinline__ float op_floor(float x) {
+__device__ __forceinline__ float op_floor(float x) {
     return floorf(x);
 }
 
-static __device__ __forceinline__ float op_ceil(float x) {
+__device__ __forceinline__ float op_ceil(float x) {
     return ceilf(x);
 }
 
-static __device__ __forceinline__ float op_round(float x) {
+__device__ __forceinline__ float op_round(float x) {
     return round(x);
 }
 
-static __device__ __forceinline__ float op_trunc(float x) {
+__device__ __forceinline__ float op_trunc(float x) {
     return trunc(x);
 }
 

@@ -4,10 +4,10 @@
 
 #ifdef GGML_USE_HIP
 #include <hip/hip_cooperative_groups.h>
-#else
+#elif CUDART_VERSION >= 9000
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
-#endif // GGML_USE_HIP
+#endif
 
 #include <cstdint>
 #include <utility>
@@ -137,6 +137,7 @@ static __global__ void soft_max_f32(
     }
 }
 
+#if CUDART_VERSION >= 9000
 // TODO: Template to allow keeping ncols in registers if they fit
 static __device__ void soft_max_f32_parallelize_cols_single_row(const float * __restrict__ x,
                                                                 float * __restrict__ dst,
@@ -242,6 +243,7 @@ static __device__ void soft_max_f32_parallelize_cols_single_row(const float * __
         col += step_size * n_elem_per_thread;
     }
 }
+#endif // CUDART_VERSION >= 9000
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -269,36 +271,36 @@ static __global__ void soft_max_back_f32(
     }
 }
 
-template<int... Ns, typename T>
+template <typename T>
 static void launch_soft_max_kernels(const float * x, const T * mask, const float * sinks, float * dst,
                              const soft_max_params & p, cudaStream_t stream, dim3 block_dims, dim3 block_nums, size_t nbytes_shared)
 {
     const int id       = ggml_cuda_get_device();
     const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
 
-    auto launch_kernel = [=](auto I) -> bool {
-        constexpr int ncols = decltype(I)::value;
-        constexpr int block = (ncols > 1024 ? 1024 : ncols);
-
-        if (p.ncols == ncols) {
-            CUDA_SET_SHARED_MEMORY_LIMIT((soft_max_f32<true, ncols, block, T>), smpbo);
-            soft_max_f32<true, ncols, block><<<block_nums, block_dims, nbytes_shared, stream>>>
-                (x, mask, sinks, dst, p);
-            return true;
-        }
-        return false;
-    };
-
-    // unary fold over launch_kernel
-    if ((launch_kernel(std::integral_constant<int, Ns>{}) || ...)) {
-        return;
+#define TRY_SOFT_MAX_LAUNCH(ncols_val, block_val) \
+    if (p.ncols == ncols_val) { \
+        CUDA_SET_SHARED_MEMORY_LIMIT((soft_max_f32<true, ncols_val, block_val, T>), smpbo); \
+        soft_max_f32<true, ncols_val, block_val><<<block_nums, block_dims, nbytes_shared, stream>>>(x, mask, sinks, dst, p); \
+        return; \
     }
+
+    TRY_SOFT_MAX_LAUNCH(32, 32)
+    TRY_SOFT_MAX_LAUNCH(64, 64)
+    TRY_SOFT_MAX_LAUNCH(128, 128)
+    TRY_SOFT_MAX_LAUNCH(256, 256)
+    TRY_SOFT_MAX_LAUNCH(512, 512)
+    TRY_SOFT_MAX_LAUNCH(1024, 1024)
+    TRY_SOFT_MAX_LAUNCH(2048, 1024)
+    TRY_SOFT_MAX_LAUNCH(4096, 1024)
+#undef TRY_SOFT_MAX_LAUNCH
 
     //default case
     CUDA_SET_SHARED_MEMORY_LIMIT((soft_max_f32<true, 0, 0, T>), smpbo);
     soft_max_f32<true, 0, 0><<<block_nums, block_dims, nbytes_shared, stream>>>(x, mask, sinks, dst, p);
 }
 
+#if CUDART_VERSION >= 9000
 __launch_bounds__(8*WARP_SIZE, 1) static __global__ void soft_max_f32_parallelize_cols(const float * __restrict__ x,
                                                      float * __restrict__ dst,
                                                      float * __restrict__ tmp_maxs,
@@ -315,6 +317,7 @@ __launch_bounds__(8*WARP_SIZE, 1) static __global__ void soft_max_f32_paralleliz
                                                  tmp_sums, p);
     }
 }
+#endif // CUDART_VERSION >= 9000
 
 template <typename T>
 static void soft_max_f32_cuda(const float *                                x,
@@ -323,7 +326,7 @@ static void soft_max_f32_cuda(const float *                                x,
                               float *                                      dst,
                               const soft_max_params &                      params,
                               cudaStream_t                                 stream,
-                              [[maybe_unused]] ggml_backend_cuda_context & ctx) {
+                              ggml_backend_cuda_context & /*ctx*/) {
     int nth = WARP_SIZE;
     const int64_t ncols_x = params.ncols;
 
@@ -339,11 +342,12 @@ static void soft_max_f32_cuda(const float *                                x,
 
 
     if (nbytes_shared <= smpbo) {
-        launch_soft_max_kernels<32, 64, 128, 256, 512, 1024, 2048, 4096>(x, mask, sinks, dst, params, stream, block_dims, block_nums, nbytes_shared);
+        launch_soft_max_kernels(x, mask, sinks, dst, params, stream, block_dims, block_nums, nbytes_shared);
     } else {
         // Parallelize across SMs for top-p/dist-sampling
         // The heuristic for parallelizing rows across SMs vs parallelizing single row & looping over all rows was done on the basis of a B6000 GPU and
         // Can be adapted further for lower-SM-count GPUs, though keeping data in registers should be implemented first as that is the optimal solution.
+#if CUDART_VERSION >= 9000
         if (ggml_cuda_info().devices[id].supports_cooperative_launch &&
             ncols_x / (params.ne01 * params.ne02 * params.ne03) > 8192 && mask == nullptr && sinks == nullptr &&
             params.scale == 1.0f && params.max_bias == 0.0f) {
@@ -355,7 +359,9 @@ static void soft_max_f32_cuda(const float *                                x,
             CUDA_CHECK(cudaLaunchCooperativeKernel((void *) soft_max_f32_parallelize_cols,
                                                    dim3(ggml_cuda_info().devices[id].nsm, 1, 1),
                                                    dim3(WARP_SIZE * 8, 1, 1), kernel_args, 0, stream));
-        } else {
+        } else
+#endif // CUDART_VERSION >= 9000
+        {
             const size_t nbytes_shared_low = WARP_SIZE * sizeof(float);
             soft_max_f32<false, 0, 0>
                 <<<block_nums, block_dims, nbytes_shared_low, stream>>>(x, mask, sinks, dst, params);
