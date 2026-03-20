@@ -131,7 +131,15 @@ struct ggml_backend_registry {
 
     ggml_backend_registry() {
 #ifdef GGML_USE_CUDA
+#if defined(__APPLE__)
+        if (dlsym(RTLD_DEFAULT, "cudaGetDeviceCount") != nullptr) {
+            register_backend(ggml_backend_cuda_reg());
+        } else {
+            GGML_LOG_INFO("%s: CUDA libraries not found, using CPU only\n", __func__);
+        }
+#else
         register_backend(ggml_backend_cuda_reg());
+#endif
 #endif
 #ifdef GGML_USE_METAL
         register_backend(ggml_backend_metal_reg());
